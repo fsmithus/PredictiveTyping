@@ -1,0 +1,176 @@
+---
+title: "Week 2 - Exploratory"
+author: "Fred Smith"
+date: "August 29, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Basic Problem Analysis and Assumptions
+
+First, we are trying to predict, based on limited prior-word context and partial words, which (correctly spelled) word the user is attempting to type next. Therefore, it makes sense to build a dictionary with a significant subset of correct words, chosen from the training data. The dictionary should also include the counts and/or relative frequencies of individual words, and word 2-grams, 3-grams, etc.
+
+The training data comes in 3 types: blogs, news, and tweets. It seems intuitively obvious that users may prefer to use different syntax, terms, and grammar in each case. For example, a news story should be realatively formal. A blog may take the form of an essay. And, a tweet, being length-limited, may be more colloquial and abbreviated. The syntax and semantics may vary with each style. Therefore, it may make sense to support several modes (classifiers). At least, the three datasets should be explored separately to compare their characteristics. It may turn out that the application should include multiple classifiers which are used to get better performance for different styles.
+
+There are a lot of options for pre-processing and normalizing the text, but it seems that some operations are more appropriate than others. Possible training data pre-processing operations include:
+
+* Remove punctuation - Since punctuation is very dependent on grammar, and that seems to be out of scope for this project, I will start by ignoring all punctuation during model building. I may add processing of periods back in later as they may have meaning with respect ot the process of predicting what's next.
+
+* Remove numbers - Good idea.
+
+* Convert to lower case - Good idea.
+
+* Remove low-value words - In this case, we are trying to guess the next word desired. We are not trying to glean the meaning of what is being typed. If a user might wish to type "the" or "of", such words should not be removed from the training set.
+
+* Stem words (remove common prefixes and suffixes) - Again, since we are not analyzing the text for meaning, but are trying to match as many words as possible, it seams that the training sets should not be stemmed.
+
+* Strip extraneous white space - Good idea just to prune memory use and improve algorithm efficiency.
+
+* Correct misspelled words - Words could be "misspelled" for a number of reasons. One could represent a mistake by the original writer. Or it could be non-english characters. If there is a dictionary of legitimate words, it would be good to filter out training words that do not appear in the dictionary. However, I am not aware of any such dictionary, so will probably just treat misspellings as legitimate.
+
+* Remove foreign words and phrases - Same discussion as for misspelled words applies here too.
+
+* Remove naughty words - Since users may desire naughty words, I am not inclined to try and judge naughtiness. So, the same discussions as for low-value, misspelled, and foreign words apply.
+
+
+## Setup Environment
+
+Initialize the computing environment. Load libraries and establish folder/file structure.
+
+```{r initialize,message=FALSE,warning=FALSE,eval=TRUE}
+library(R.utils)
+library(NLP)
+library(tm)
+setwd("~/Academic/DataScience/Capstone/expl")
+datafolder <- "../data/en_US"
+```
+
+## Define Scrubbing Routines
+
+Below are several library routines (will be moved in a later phase of the project) for processing the data described throughout this document.
+
+```{r define-pre-process,eval=TRUE}
+scrub.data.file <- function(path) {             # perform basic scrubbing per discussion above       
+        f <- file(path)
+        data <- readLines(f)                    # read raw text; this approach won't scale, but I do have 16 GB of RAM
+        close(f)
+        data <- removePunctuation(data)         # remove punctuation
+        data <- removeNumbers(data)             # remove numbers
+        data <- tolower(data)                   # lower case
+        # data <- removeWords(data,stopwords("english"))  # remove english words that have no analytical value
+        # data <- removeWords(data,blacklist.words)       # remove profanity or other words that don't belongh
+        # data <- stemDocument(data)                      # stem words (remove endings like "ing", "es", "s", etc.)
+        # data <- stripWhitespace(data)         # remove extraneous whitespace characters (done later, not necessary)
+        unlist(data)                            # return simple vector
+}
+
+gramify <- function(n,words) {                  # convert a vector of words into a vector of N-grams
+        if ((1 < n) && (n <= length(words))) {  # N must be between 2 and the length of the input vector
+                grams <- vector("character",length(words) - (n-1))
+                for (i in 1:(length(grams))) {
+                        gram <- words[i]
+                        for (j in 1:(n-1)) {
+                                gram <- paste(gram,words[i+j],sep=" ")
+                        }
+                        grams[i] <- gram
+                }
+                grams
+        }
+}
+```
+
+## Data Scrubbing
+```{r scrub,eval=TRUE}
+f<-paste(datafolder,"tiny_data.txt",sep="/")
+con <- file(f, open="r")
+lines <- readLines(con)
+close(con)
+
+data <- scrub.data.file(f)
+docs <- strsplit(data, "\\s+")
+```
+
+```{r evaluate-gramify,eval=TRUE,echo=TRUE}
+
+# Evaluate/debut based on some line in the data file.
+
+str(docs[[1]])
+str(gramify(2,docs[[1]]))
+str(gramify(3,docs[[1]]))
+str(gramify(4,docs[[1]]))
+```
+
+
+## Exploratory Analysis
+
+At this point, all the words and N-grams can be computed, and would have a count of 1.
+
+But it would be better to know the counts of unique N-grams.
+
+### Unigrams
+```{r unigrams,eval=TRUE}
+unigrams <- unlist(docs)
+unigrams.count <- sort(table(sort(unigrams)),decreasing=TRUE)
+unigrams.count
+unigrams.count[1:5]
+str(unigrams.count[1])
+unigrams.count["black"]      # Can be addressed by the N-gram itself.
+
+```
+
+### Bigrams
+```{r bigrams,eval=TRUE}
+bigrams <- vector("character")
+for (i in 1:length(docs)) {     # Build entire list of bigrams, including duplicates
+        g <- gramify(2,docs[[i]])
+        bigrams <- c(bigrams,g)
+}
+bigrams.count <- sort(table(sort(bigrams)),decreasing=TRUE)
+bigrams.count
+bigrams.count[1:5]
+str(bigrams.count[1])
+bigrams.count["horse ate"]      # Counts can be addressed by the N-gram itself.
+```
+
+### Trigrams
+```{r trigrams,eval=TRUE}
+trigrams <- vector("character")
+for (i in 1:length(docs)) {     # Build entire list of trigram, including duplicates
+        g <- gramify(3,docs[[i]])
+        trigrams <- c(trigrams,g)
+}
+trigrams.count <- sort(table(sort(trigrams)),decreasing=TRUE)
+trigrams.count
+trigrams.count[1:5]
+str(trigrams.count[1])
+trigrams.count["the brown horse"]      # Counts can be addressed by the N-gram itself.
+```
+
+### N-Gram Frequency Plots
+```{r ngram-plots,eval=TRUE}
+# par(mfrow=c(2,2),mai=c(.4,.2,.2,.2))
+par(mfrow=c(2,2),mai=c(0.8466,0.6806,0.6806,0.3486))
+plot(unigrams.count,main="Unigram Frequencies",las=2,xlim=range(1:20))
+
+num.words <- length(unigrams.count)
+plot.data <- cumsum(unigrams.count)
+n <- plot.data[length(plot.data)]
+plot(plot.data,main="Cumulative Word Count",las=2,ylab="Word Count",ylim=c(1,n),xlab="",xaxt='n')
+abline(h=n * .25,lty=2)
+abline(h=n * .50)
+abline(h=n * .75,lty=2)
+if (num.words <= 50) {
+        axis(1,las=2,labels=names(unigrams.count)[1:num.words],at=(1:num.words))
+}
+
+plot(bigrams.count,main="Bigram Frequencies",las=2,xlim=range(1:20))
+plot(trigrams.count,main="Trigram Frequencies",las=2,xlim=range(1:20))
+```
+
+## Appendix A - Environment
+```{r environment}
+sessionInfo()
+```

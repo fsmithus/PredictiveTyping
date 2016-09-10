@@ -1,0 +1,49 @@
+---
+title: "Exploratory Analysis"
+author: "Fred Smith"
+date: "Friday, June 17, 2016"
+output: html_document
+---
+
+## Setup environment.
+```{r message=FALSE,warning=FALSE}
+library(R.utils)
+setwd("~/Academic/DataScience/Capstone/expl")
+datafolder <- "../data/en_US"
+```
+
+## File summaries
+```{r}
+flist <- list.files(path=datafolder, recursive=T, pattern=".*en_.*.txt")
+l <- lapply(paste(datafolder, flist, sep="/"), function(f) {
+        fsize <- file.info(f)[1]/1024/1024
+        con <- file(f, open="r")
+        lines <- readLines(con)
+        nchars <- sapply(lines, nchar)
+        maxchars <- nchar(lines[which.max(nchars)])
+        nwords <- sum(sapply(strsplit(lines, "\\s+"), length))
+        nloves <- sum(sapply(lines, function(l) {
+                grepl("love",l)
+                }))
+        nhates <- sum(sapply(lines, function(l) {
+                grepl("hate",l)
+                }))
+        close(con)
+        return(c(f, format(round(fsize, 2), nsmall=2), length(lines), maxchars, nwords, nloves, nhates, round(nloves/nhates,2)))
+        })
+
+datafiles <- data.frame(matrix(unlist(l), nrow=length(l), byrow=T))
+colnames(datafiles) <- c("file", "size(MB)", "num.lines", "longest.line", "num.words", "num.loves", "num.hates", "love.ratio")
+datafiles
+```
+
+## Find Specific Tweets (Quiz 1)
+```{r}
+f <- file(paste(datafolder, "en_US.twitter.txt", sep="/"),open="r")
+tweets <- readLines(f)
+close(f)
+
+tweets[grepl("biostat",tweets)]
+
+tweets[grepl("A computer once beat me at chess, but it was no match for me at kickboxing",tweets)]
+```

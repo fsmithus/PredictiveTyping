@@ -1,0 +1,234 @@
+---
+title: 'Peer-Reviewed Assignment #1'
+author: "Fred Smith"
+date: "September 2, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+This is the first peer-reviewed checkpoint for my Data Science capstone project, part of the Coursera certification.
+
+The project is to design and build a predictive typing web application. [Large datasets](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip) representative of blogs, news, and Twitter feeds have been provided.
+
+### Project Status
+
+During this exploratory phase of the project, I am computing and analyzing the word frequency, unigrams, bigrams, and trigrams of each dataset. I am also building up a library of processing functions. They are included in the body of this document for now, but will likely be moved to a library in future development phases.
+
+### Plan for the Application
+
+My plan is to build a Shiny app, which may have a mode/style selection box indicating whether the user is typing a blog, news, or tweet. One other long text field will be the input buffer. As the user types, between 3 and 5 suggestion fields/buttons will display most-likely next word choices. Clicking on a choice will copy the suggestion into the input buffer and allow the user to continue typing.
+
+I will probably include a hidable diagnostic panel in the app to keep track of performance metrics, like how many words have been typed, how many times a word was selected (before the next space or punctuation), how many times selected words were the first/second/third/etc. choice, and how many keystrokes were saved by picking a suggestion.
+
+### System Performance
+
+The modeling process is very compute-intensive, but does run on my computer. For now, I am using basic R functions that, I am sure, do not make for an efficient algorithm. However, building the model does not have hard time requirements. But after the model is built, the app will have to be responsive to typing. With each keystroke, the algorithm will have to compute the 3-5 best suggestions, so that typing is not impeded. And it has to allow for network latency of each key stroke.
+
+I have a graph-based, deterministic, algorithm in mind that should be very fast to look up suggestions. The trick will be in the data structures. At this time, I don't know R well enough to build the structures I need for that algorithm. So, I'm going to have to investigate. Hopefully, I'll either come across another workable algorithm or some good data structure examples written in R.
+
+This is still the early phases of planning, but I am reading many articles, and may revisit the current work as warranted.
+
+
+## Basic Data/Problem Analysis and Assumptions
+
+First, we are trying to predict, based on limited prior-word context and partial words, which (correctly spelled) word the user is attempting to type next. Therefore, it makes sense to build a dictionary with a significant subset of correct words, chosen from the training data. The dictionary should also include the counts and/or relative frequencies of individual words, and word 2-grams, 3-grams, etc.
+
+The training data comes in 3 types: blogs, news, and tweets. It seems intuitively obvious that users may prefer to use different syntax, terms, and grammar in each case. For example, a news story should be realatively formal. A blog may take the form of an essay. And, a tweet, being length-limited, may be more colloquial and abbreviated. The syntax and semantics may vary with each style. Therefore, it may make sense to support several modes (classifiers). At least, the three datasets should be explored separately to compare their characteristics. It may turn out that the application should include multiple classifiers which are used to get better performance for different styles.
+
+There are a lot of options for pre-processing and normalizing the text, but it seems that some operations are more appropriate than others. Possible training data pre-processing operations include:
+
+* Remove punctuation - Since punctuation is very dependent on grammar, and that seems to be out of scope for this project, I will start by ignoring all punctuation during model building. I may add processing of periods back in later as they may have meaning with respect ot the process of predicting what's next.
+
+* Remove numbers - Good idea.
+
+* Convert to lower case - Good idea.
+
+* Remove low-value words - In this case, we are trying to guess the next word desired. We are not trying to glean the meaning of what is being typed. If a user might wish to type "the" or "of", such words should not be removed from the training set.
+
+* Stem words (remove common prefixes and suffixes) - Again, since we are not analyzing the text for meaning, but are trying to match as many words as possible, it seams that the training sets should not be stemmed.
+
+* Strip extraneous white space - Good idea just to prune memory use and improve algorithm efficiency.
+
+* Correct misspelled words - Words could be "misspelled" for a number of reasons. One could represent a mistake by the original writer. Or it could be non-english characters. If there is a dictionary of legitimate words, it would be good to filter out training words that do not appear in the dictionary. However, I am not aware of any such dictionary, so will probably just treat misspellings as legitimate.
+
+* Remove foreign words and phrases - Same discussion as for misspelled words applies here too.
+
+* Remove naughty words - Since users may desire naughty words, I am not inclined to try and judge naughtiness. So, the same discussions as for low-value, misspelled, and foreign words apply.
+
+
+## Environment Setup
+
+Initialize the computing environment. Load libraries and establish folder/file structure.
+
+```{r initialize,message=FALSE,warning=FALSE,eval=TRUE}
+library(R.utils)
+library(NLP)
+library(tm)
+setwd("~/Academic/DataScience/Capstone/expl")
+datafolder <- "../data/en_US"
+timings <- TRUE
+```
+
+
+## Data Scrubbing and Analysis Routines
+
+Below are several library routines (that will be moved in a later phase of the project) for processing the data described throughout this document.
+
+Note: The following algorithms were first tested on a tiny, 7-line data file. Those results also appear at the end of this report.
+
+#### scrub.data.file(path)
+
+Basic clean-up as discussed above.
+
+```{r scrub.data.file,eval=TRUE}
+scrub.data.file <- function(path) {             # perform basic scrubbing per discussion above       
+        f <- file(path)
+        data <- readLines(f)                    # read raw text; won't scale, but have 16 GB of RAM
+        close(f)
+        data <- removePunctuation(data)         # remove punctuation
+        data <- removeNumbers(data)             # remove numbers
+        data <- tolower(data)                   # lower case
+        # data <- removeWords(data,stopwords("english"))  # remove english words that have no analytical value
+        # data <- removeWords(data,blacklist.words)       # remove profanity or other words that don't belongh
+        # data <- stemDocument(data)                      # stem words (remove common suffixes and prefixes)
+        # data <- stripWhitespace(data)         # remove whitespace characters (done later, not necessary)
+        unlist(data)                            # return simple vector
+}
+```
+
+#### gramify(n,words)
+
+Convert a vector of words to a vector of N-grams (represented as non-unique strings).
+
+```{r gramify,eval=TRUE}
+gramify <- function(n,words) {                  # convert a vector of words into a vector of N-grams
+        if ((1 < n) && (n <= length(words))) {  # N must be between 2 and the length of the input vector
+                grams <- vector("character",length(words) - (n-1))
+                for (i in 1:(length(grams))) {
+                        gram <- words[i]
+                        for (j in 1:(n-1)) {
+                                gram <- paste(gram,words[i+j],sep=" ")
+                        }
+                        grams[i] <- gram
+                }
+                grams
+        }
+}
+```
+
+#### count.ngrams(N,docs)
+
+Convert list of documents into vector of unique N-grams with occurence counts.
+
+```{r count.ngrams,eval=TRUE}
+count.ngrams <- function(n,docs) {
+        begin.time <- proc.time()
+        grams <- vector("character")
+        for (i in 1:length(docs)) {             # Build entire list of n-gram, including duplicates
+                g <- gramify(3,docs[[i]])
+                grams <- c(grams,g)
+        }
+        result <- sort(table(sort(grams)),decreasing=TRUE)  
+        elapsed.time <- proc.time() - begin.time
+        if (timings) {
+                print(paste0("count.ngrams(",toString(n),"): "))
+                print(elapsed.time)
+        }
+        result        
+}
+```
+
+#### plot.ngrams(file,unigrams,bigrams,trigrams)
+
+Plot counts of the uni-/bi-/tri-grams.
+
+```{r plot.ngrams,eval=TRUE}
+plot.ngrams <- function (f,g1,g2,g3) {
+        par(mfrow=c(2,2),mai=c(0.8466,0.6806,0.6806,0.3486))
+        plot(g1,main="Unigram Frequencies",las=2,xlim=range(1:20))
+        
+        num.words <- length(g1)                 # Number of unique words encountered
+        plot.data <- cumsum(g1)                 # Cumulative counts of words
+        n <- plot.data[length(plot.data)]       # Total number of (non-unique) words
+        plot(plot.data,main="Cumulative Word Count",las=2,ylab="Word Count",ylim=c(1,n),xlab="",xaxt='n')
+        abline(h=n * .25,lty=2)
+        abline(h=n * .50)
+        abline(h=n * .75,lty=2)
+        if (num.words <= 50) {
+                axis(1,las=2,labels=names(g1)[1:num.words],at=(1:num.words))
+        }
+        
+        plot(g2,main="Bigram Frequencies",las=2,xlim=range(1:20))
+        plot(g3,main="Trigram Frequencies",las=2,xlim=range(1:20))        
+}
+```
+
+#### analyze.ngrams(filename)
+
+Read a data file, compute and plot the N-Grams.
+
+```{r analyze.ngrams,eval=TRUE}
+analyze.ngrams <- function(filename) {
+        begin.time <- proc.time()
+        f<-paste(datafolder,filename,sep="/")   # Read file into memory. Won't scale, but I have 16 GB of RAM.
+        con <- file(f, open="r")
+        lines <- readLines(con)
+        close(con)
+        
+        data <- scrub.data.file(f)              # Basic cleanup and normalization
+        docs <- strsplit(data, "\\s+")
+        
+        unigrams <- unlist(docs)                # Calculate N-grams
+        unigrams.count <- sort(table(sort(unigrams)),decreasing=TRUE)
+        bigrams.count <- count.ngrams(2,docs)
+        trigrams.count <- count.ngrams(3,docs)
+        
+        plot.ngrams(f,unigrams.count,bigrams.count,trigrams.count)
+        elapsed.time <- proc.time() - begin.time
+        if (timings) {
+                print(paste0("analyze.ngram(",filename,"): "))
+                print(elapsed.time)
+        }
+        gc()                                    # Garbage collection
+}
+```
+
+
+## Blog Data Analysis
+```{r, blogs,eval=FALSE}
+        date()
+        analyze.ngrams("en_US.blogs.txt")
+```
+
+
+## News Data Analysis
+```{r, news,eval=FALSE}
+        date()
+        analyze.ngrams("en_US.news.txt")
+```
+
+
+## Tweet Data Analysis
+```{r, tweets,eval=FALSE}
+        date()
+        analyze.ngrams("en_US.twitter.txt")
+```
+
+
+
+## Appendix A - Environment
+```{r environment}
+sessionInfo()
+```
+
+
+## Appendix B - Library Routine Test Results
+```{r, tiny.test,eval=TRUE}
+        date()
+        analyze.ngrams("tiny_data.txt")
+```

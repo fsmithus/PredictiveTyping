@@ -1,0 +1,19 @@
+---
+title: "Relationships"
+author: "Fred Smith"
+date: "Thursday, June 23, 2016"
+output: html_document
+---
+
+
+## Explore Relationships in Scrubbed Data
+```{r eval=FALSE,echo=FALSE}
+dtm <- DocumentTermMatrix(docs)
+tdm <- TermDocumentMatrix(docs)
+```
+
+
+
+## Word Clouds
+```{r wordclouds,eval=FALSE,echo=FALSE}
+```

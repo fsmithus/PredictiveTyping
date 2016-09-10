@@ -1,0 +1,239 @@
+---
+title: "Scrub, Partition, Save"
+author: "Fred Smith"
+date: "Thursday, June 23, 2016"
+output: html_document
+---
+
+
+## Setup Packages, Libraries, Seeds, and File Paths
+```{r do-once,eval=FALSE}
+Needed <- c("tm", "SnowballCC", "RColorBrewer", "ggplot2", "wordcloud", "biclust", "cluster", "igraph", "fpc")   
+install.packages(Needed, dependencies=TRUE)
+```
+
+```{r per-session,message=FALSE,warning=FALSE}
+
+# Load required libraries
+library(NLP)
+library(tm)
+# library(SnowballC)
+# library(lattice)
+# library(ggplot2)
+# library(caret)
+# library(wordcloud)
+
+# Initialize data partitioning parameters
+set.seed(5309)
+data.partitions <- data.frame(
+        name=c("Training","Validation","Test"),
+        portion=c(0.70,0.15,0.15)
+        )
+
+# Initialize data location parameters
+setwd("~/Academic/DataScience/Capstone/expl")
+datafolder <- "../data/en_US"
+source.files <- list.files(path=datafolder, recursive=T, pattern=".*en_.*.txt")
+```
+
+
+## Text Mining to Scrub Raw Data Files
+```{r eval=FALSE,echo=FALSE}
+docs <- Corpus(DirSource(datafolder))
+docs <- tm_map(docs, removePunctuation)                         # remove punctuation
+docs <- tm_map(docs, removeNumbers)                             # remove numbers
+docs <- tm_map(docs, tolower)                                   # lower case all
+docs <- tm_map(docs, removeWords, stopwords("english"))         # remove english words that have no analytical value
+
+docs <- tm_map(docs, stemDocument)                              # stem words (remove endings like "ing", "es", "s", etc.)
+docs <- tm_map(docs, stripWhitespace)
+#docs <- tm_map(docs, removeWords, blacklist.words)              # remove profanity or other words that just don't belong
+
+docs <- tm_map(docs, PlainTextDocument)                         # processed documents are now plain text
+```
+
+## Define Pre-processing Function
+```{r pre-process}
+scrub.data.file <- function(path) {
+        f <- file(path)
+        data <- readLines(f)                            # read raw text
+        close(f)
+        data <- removePunctuation(data)                 # remove punctuation
+        data <- removeNumbers(data)                     # remove numbers
+        data <- tolower(data)                           # lower case
+        data <- removeWords(data,stopwords("english"))  # remove english words that have no analytical value
+        # data <- removeWords(data,blacklist.words)     # remove profanity or other words that don't belongh
+        data <- stemDocument(data)                      # stem words (remove endings like "ing", "es", "s", etc.)
+        data <- stripWhitespace(data)                   # remove extraneous whitespace characters
+        data
+}
+```
+
+
+Test Scrubbing Procedure
+```{r eval=FALSE,echo=FALSE}
+tweets <- scrub.data.file(paste(datafolder,"en_US.twitter.txt",sep="/"))
+saveRDS(tweets,"all_tweets.rds",ascii=TRUE)
+
+tweets2 <- readRDS("all_tweets.rds")
+```
+
+## Scrub and Sample Raw Data
+### Training (70%), Validation (15%), and Test (15%) datasets
+
+It was necessary to process one file at a time and write my own low-overhead partitioning algorithm
+because of initial limited computer resources (6GB RAM).
+
+I later upgraded to 12GB of RAM before building models.
+
+```{r eval=FALSE,echo=FALSE}
+for (i in seq(docs)) {
+        
+        # Partition the scrubbed data files.
+        print(i)
+        print(" Read file...")
+        data <- docs[[i]]$content
+        print("Training partition...")
+        inTrain <- createDataPartition(y=data,p=0.7,list=FALSE)
+        print("Training data...")
+        training <- data[inTrain,]
+        print("Remaining data")
+        rest <- data[-inTrain,]
+        print("Validation partition...")
+        inVal <- createDataPartition(y=rest,p=0.5,list=FALSE)
+        print("Validation data...")
+        validation <- rest[inVal,]
+        print("Testing data...")
+        testing <- rest[-inVal,]
+        
+        # Save scrubbed partitions to files.
+        saveRDS(training,file=paste(source[i],"training.rds",sep="_"),ascii=TRUE)
+        saveRDS(validation,file=paste(source[i],"validation.rds",sep="_"),ascii=TRUE)
+        saveRDS(testing,file=paste(source[i],"testing.rds",sep="_"),ascii=TRUE)
+        print("...")
+        }
+```
+
+```{r scrub-raw-data-caret,eval=FALSE,echo=FALSE}
+for (i in seq(source.files)) {
+        print(i)
+        print(" Scrub...")
+        data <- scrub.data.file(paste(datafolder,source.files[i],sep="/"))       # Scrub raw data
+        
+        print("Partition training...")
+        inTrain <- createDataPartition(y=data,p=0.7,list=FALSE)                 # Sample training data (70%)
+        print("Collect training...")
+        training <- data[inTrain,]
+        print("Collect rest...")
+        rest <- data[-inTrain,]
+        print("Partition validation...")
+        inVal <- createDataPartition(y=rest,p=0.5,list=FALSE)                   # Split remaining for validation & test
+        print("Collect validation...")
+        validation <- rest[inVal,]
+        print("Collect testing...")
+        testing <- rest[-inVal,]
+        
+        # Save scrubbed data partitions to files.
+        print("Saving training data...")
+        saveRDS(training,file=paste(source.files[i],"training.rds",sep="."),ascii=TRUE)
+        print("Saving validation data...")
+        saveRDS(validation,file=paste(source.files[i],"validation.rds",sep="."),ascii=TRUE)
+        print("Saving testing data...")
+        saveRDS(testing,file=paste(source.files[i],"testing.rds",sep="."),ascii=TRUE)
+        print("...")
+}
+```
+
+```{r scrub-raw-data-sample-orig,eval=FALSE,echo=FALSE}
+for (i in seq(source.files)) {
+        print(i)
+        print(" Scrub...")
+        data <- scrub.data.file(paste(datafolder,source.files[i],sep="/"))       # Scrub raw data
+        
+        print("Partition training...")
+        inTrain <- createDataPartition(y=data,p=0.7,list=FALSE)                 # Sample training data (70%)
+        print("Collect training...")
+        training <- data[inTrain,]
+        print("Collect rest...")
+        rest <- data[-inTrain,]
+        print("Partition validation...")
+        inVal <- createDataPartition(y=rest,p=0.5,list=FALSE)                   # Split remaining for validation & test
+        print("Collect validation...")
+        validation <- rest[inVal,]
+        print("Collect testing...")
+        testing <- rest[-inVal,]
+        
+        # Save scrubbed data partitions to files.
+        print("Saving training data...")
+        saveRDS(training,file=paste(source.files[i],"training.rds",sep="."),ascii=TRUE)
+        print("Saving validation data...")
+        saveRDS(validation,file=paste(source.files[i],"validation.rds",sep="."),ascii=TRUE)
+        print("Saving testing data...")
+        saveRDS(testing,file=paste(source.files[i],"testing.rds",sep="."),ascii=TRUE)
+        print("...")
+}
+```
+
+```{r draw,eval=FALSE,echo=FALSE}
+draw <- function(probs) {
+        x <- runif(1)
+        p <- 0
+        for (i in 1:length(probs)) {
+                p <- p + probs[i]
+                if (x <= p) { return(i) }
+                }
+        return(i)
+        }
+```
+
+```{r partition}
+partition <- function(probs,n=1) {
+        y <- integer(n)
+        for (i in 1:n) {
+                x <- runif(1)
+                p <- 0.0
+                t <- 0
+                for (j in 1:length(probs)) {
+                        p <- p + probs[j]
+                        if (x <= p) { 
+                                t <- j
+                                break
+                                }
+                        }
+                y[i] <- t
+                }
+        return(y)
+        }
+```
+
+Preprocess the data by scrubbing the raw data per advice found in papers related to the Text Mining package. Then,
+partition the data into three datasets for training (70%), validation (15%), and testing (15%) respectively. Save
+each dataset in a separate file.
+
+Since it is not yet known which sources will be used to build the predictive typing application, each source is
+proprocessed and managed separately. They can be aggregated later during model design.
+
+
+```{r scrub-partition-save}
+print("=============================")
+for (i in seq(source.files)) {
+        print(source.files[i])
+        print(date())
+        print(". Scrub...")
+        data <- scrub.data.file(paste(datafolder,source.files[i],sep="/"))      # Scrub raw data
+        
+        print(". Partition...")
+        p <- partition(data.partitions[,"portion"],length(data))                # Calculate partitions for lines in file
+        
+        print(". Save...")
+        for (j in 1:length(data.partitions[,"name"])) {                         # Save each data partition to a file
+                name <- data.partitions[j,"name"]
+                print(name)
+                d <- data[p==j]
+                print(length(d))
+                saveRDS(d,file=paste(source.files[i],name,"rds",sep="."),ascii=TRUE)
+        }
+        print("=============================")
+}
+print(date())
+```

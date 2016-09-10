@@ -1,0 +1,66 @@
+---
+title: "N-Gram Analysis"
+author: "Fred Smith"
+date: "September 7, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Initialize Environment
+```{r initialize,message=FALSE,warning=FALSE,eval=TRUE}
+# library(R.utils)
+# library(NLP)
+# library(tm)
+
+setwd("~/Academic/DataScience/Capstone/dev")                            # Where is R running?
+raw.data.folder <- "../data/en_US"                                      # Where is the data?
+reduced.data.folder <- paste(raw.data.folder,"reduced",sep="/")         # Where to put the reduced dataset
+file.list <- c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt")  # Raw data files.
+
+set.seed(8675309)                               # Set randomization so result is repeatable.
+data.fraction <- 0.05                           # What fraction of the test data should be processed?
+
+source("library.R")                             # Load previously developed scrubbing routines.
+```
+
+
+## Load a Subset of the Data
+```{r reduce-data,eval=TRUE}
+for (i in 1:length(file.list)) {
+        sample <- vector()
+        pathname <- paste(raw.data.folder,file.list[i],sep="/")
+        f <- file(pathname,"rb")
+        while(TRUE) {
+                line <- readLines(f,n=1,warn=FALSE,skipNul=TRUE)
+                if (length(line) > 0) {
+                        if (runif(1) <= data.fraction) {                # Randomly include/discard this line?
+                                sample <- c(sample,line)                # Concatenate. (Is this efficient?)
+                        }
+                }
+                else {
+                        break
+                }
+        }
+        close(f)
+        
+        pathname <- paste(reduced.data.folder,file.list[i],sep="/")
+        f <- file(pathname,"wb")
+        writeLines(sample,f)
+        close(f)
+}
+```
+
+```{r plot-profiles,evalue=TRUE}
+date()
+analyze.ngrams("en_US.news.txt",reduced.data.folder)
+date()
+analyze.ngrams("en_US.blogs.txt",reduced.data.folder)
+date()
+analyze.ngrams("en_US.twitter.txt",reduced.data.folder)
+date()
+```
+
